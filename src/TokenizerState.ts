@@ -11,5 +11,11 @@ enum TokenizerStates {
     attributeValueDoubleQuoted,
     attributeValueSingleQuoted,
     attributeValueUnquoted,
-    afterAttributeValueQuoted
-};
+    afterAttributeValueQuoted,
+    markupDeclarationOpen,
+    commentStart,
+    commentStartDash,
+    comment,
+    commentEndDash,
+    commentEnd
+}

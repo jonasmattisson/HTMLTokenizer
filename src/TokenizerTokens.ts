@@ -1,20 +1,29 @@
-interface ITagTokenAttriute {
-    name: String;
-    value: String;
+class Token {}
+
+/* EOF TOKEN */
+class EOFToken extends Token {}
+
+/* DOCTYPE TOKEN */
+class DoctypeToken extends Token {}
+
+/* COMMENT TOKEN */
+class CommentToken extends Token {
+    constructor(public comment) {
+        super();
+    }
 }
 
-class Token {
-
-}
-
-class EOFToken extends Token{
-
-}
-
+/* CHARACTER TOKEN */
 class CharacterToken extends Token {
     constructor(public character) {
         super();
     }
+}
+
+/* TAG TOKENS */
+interface ITagTokenAttriute {
+    name: String;
+    value: String;
 }
 
 class TagToken extends Token {

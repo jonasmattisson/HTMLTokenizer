@@ -6,7 +6,6 @@ class Tokenizer {
     private state: TokenizerStates = TokenizerStates.dataState;
     private tokens: Array<Token>;
     private currentToken: Token;
-    private done: boolean = false;
 
     private currentCharacter: string;
     private currentCharacterIndex: number = -1;
@@ -63,13 +62,27 @@ class Tokenizer {
                 case TokenizerStates.afterAttributeValueQuoted:
                     this.afterAttributeValueQuotedState();
                     break;
-                default:
-                    this.done = true;
+                case TokenizerStates.markupDeclarationOpen:
+                    this.markupDeclarationOpenState();
+                    break;
+                case TokenizerStates.commentStart:
+                    this.commentStartState();
+                    break;
+                case TokenizerStates.commentStartDash:
+                    this.commentStartDashState();
+                    break;
+                case TokenizerStates.comment:
+                    this.commentState();
+                    break;
+                case TokenizerStates.commentEndDash:
+                    this.commentEndDashState();
+                    break;
+                case TokenizerStates.commentEnd:
+                    this.commentEndState();
                     break;
             }
             i += 1;
         }
-
 
         return this.tokens;
     }
@@ -91,7 +104,9 @@ class Tokenizer {
 
     private tagOpenState () {
         this.readNextCharacter();
-        if (this.currentCharacter === '/') {
+        if (this.currentCharacter === '!') {
+            this.state = TokenizerStates.markupDeclarationOpen;
+        } else if (this.currentCharacter === '/') {
             this.state = TokenizerStates.endTagOpen;
         } else if (Tokenizer.UPPERCASE_A_Z.test(this.currentCharacter)) {
             this.currentToken = new StartTagToken(this.currentCharacter.toLowerCase());
@@ -100,7 +115,7 @@ class Tokenizer {
             this.currentToken = new StartTagToken(this.currentCharacter);
             this.state = TokenizerStates.tagName;
         } else {
-            throw 'Parse error. Emit a U+003C LESS-THAN SIGN character token and reconsume the current input character in the data state.';
+            throw 'Character: ' + this.currentCharacter + '.Parse error. Emit a U+003C LESS-THAN SIGN character token and reconsume the current input character in the data state.';
         }
     }
 
@@ -311,6 +326,117 @@ class Tokenizer {
         } else {
             throw 'Parse error. selfClosingTagState';
         }
+    }
+
+    private markupDeclarationOpenState () {
+        if(this.charArrayEquals(this.characterLookahed(2), ['-','-'])) {
+            this.readNextCharacter(); this.readNextCharacter();
+            this.state = TokenizerStates.commentStart;
+            this.currentToken = new CommentToken('');
+        } else {
+            throw 'Parse error. markupDeclarationOpenState. Only comments implemented';
+        }
+    }
+
+    private commentStartState () {
+        var token = <CommentToken> this.currentToken;
+
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = TokenizerStates.commentStartDash;
+        } else if (this.currentCharacter === '>') {
+            throw 'Parse error. commentStartState';
+        } else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentStartState';
+        } else {
+            token.comment += this.currentCharacter;
+            this.state = TokenizerStates.comment;
+        }
+    }
+
+    private commentStartDashState () {
+        var token = <CommentToken> this.currentToken;
+
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = TokenizerStates.commentEnd;
+        } else if (this.currentCharacter === '>') {
+            throw 'Parse error. commentStartDashState';
+        } else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentStartDashState';
+        } else {
+            token.comment += '-' + this.currentCharacter;
+            this.state = TokenizerStates.comment;
+        }
+    }
+
+    private commentState () {
+        var token = <CommentToken> this.currentToken;
+
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = TokenizerStates.commentEndDash;
+        } else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentState';
+        } else {
+            token.comment += this.currentCharacter;
+        }
+    }
+
+    private commentEndDashState () {
+        var token = <CommentToken> this.currentToken;
+
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = TokenizerStates.commentEnd;
+        } else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentEndDashState';
+        } else {
+            token.comment += '-' + this.currentCharacter;
+            this.state = TokenizerStates.comment;
+        }
+    }
+
+    private commentEndState () {
+        var token = <CommentToken> this.currentToken;
+
+        this.readNextCharacter();
+        if (this.currentCharacter === '>') {
+            this.state = TokenizerStates.dataState;
+            this.emitToken(this.currentToken);
+        } else if (this.currentCharacter === '!') {
+            throw 'Parse error. commentEndState';
+        } else if (this.currentCharacter === '-') {
+            throw 'Parse error. commentEndState';
+        } else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentEndState';
+        } else {
+            throw 'Parse error. commentEndState';
+        }
+    }
+
+
+    private charArrayEquals (arr1: Array<string>, arr2: Array<string>): boolean {
+        if(arr1.length !== arr2.length) {
+            return false;
+        }
+
+        var equals = true;
+        for(var i = 0; i < arr1.length; i += 1) {
+            equals = equals && arr1[i] === arr2[i];
+        }
+
+        return equals;
+    }
+
+    private characterLookahed(nbrChars: number): Array<string> {
+        var chars: Array<string> = [];
+
+        for(var i = 1; i <= nbrChars; i += 1) {
+            chars.push(this.charArray[this.currentCharacterIndex + i]);
+        }
+
+        return chars;
     }
 
     private readNextCharacter(): void {

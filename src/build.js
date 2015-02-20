@@ -4,77 +4,10 @@ var __extends = this.__extends || function (d, b) {
     __.prototype = b.prototype;
     d.prototype = new __();
 };
-var Token = (function () {
-    function Token() {
-    }
-    return Token;
-})();
-var EOFToken = (function (_super) {
-    __extends(EOFToken, _super);
-    function EOFToken() {
-        _super.apply(this, arguments);
-    }
-    return EOFToken;
-})(Token);
-var CharacterToken = (function (_super) {
-    __extends(CharacterToken, _super);
-    function CharacterToken(character) {
-        _super.call(this);
-        this.character = character;
-    }
-    return CharacterToken;
-})(Token);
-var TagToken = (function (_super) {
-    __extends(TagToken, _super);
-    function TagToken(tagName) {
-        _super.call(this);
-        this.attributes = [];
-        this.selfClosing = false;
-        this.currentAttribute = null;
-        this.tagName = tagName;
-    }
-    TagToken.prototype.addAttribute = function (attribute) {
-        this.currentAttribute = attribute;
-        this.attributes.push(attribute);
-    };
-    return TagToken;
-})(Token);
-var StartTagToken = (function (_super) {
-    __extends(StartTagToken, _super);
-    function StartTagToken(tagName) {
-        _super.call(this, tagName);
-    }
-    return StartTagToken;
-})(TagToken);
-var EndTagToken = (function (_super) {
-    __extends(EndTagToken, _super);
-    function EndTagToken(tagName) {
-        _super.call(this, tagName);
-    }
-    return EndTagToken;
-})(TagToken);
-var TokenizerStates;
-(function (TokenizerStates) {
-    TokenizerStates[TokenizerStates["dataState"] = 0] = "dataState";
-    TokenizerStates[TokenizerStates["tagOpen"] = 1] = "tagOpen";
-    TokenizerStates[TokenizerStates["endTagOpen"] = 2] = "endTagOpen";
-    TokenizerStates[TokenizerStates["tagName"] = 3] = "tagName";
-    TokenizerStates[TokenizerStates["beforeAttributeName"] = 4] = "beforeAttributeName";
-    TokenizerStates[TokenizerStates["selfClosingTag"] = 5] = "selfClosingTag";
-    TokenizerStates[TokenizerStates["attributeName"] = 6] = "attributeName";
-    TokenizerStates[TokenizerStates["afterAttributeName"] = 7] = "afterAttributeName";
-    TokenizerStates[TokenizerStates["beforeAttributeValue"] = 8] = "beforeAttributeValue";
-    TokenizerStates[TokenizerStates["attributeValueDoubleQuoted"] = 9] = "attributeValueDoubleQuoted";
-    TokenizerStates[TokenizerStates["attributeValueSingleQuoted"] = 10] = "attributeValueSingleQuoted";
-    TokenizerStates[TokenizerStates["attributeValueUnquoted"] = 11] = "attributeValueUnquoted";
-    TokenizerStates[TokenizerStates["afterAttributeValueQuoted"] = 12] = "afterAttributeValueQuoted";
-})(TokenizerStates || (TokenizerStates = {}));
-;
 var Tokenizer = (function () {
     function Tokenizer(charArray) {
         this.charArray = charArray;
         this.state = 0 /* dataState */;
-        this.done = false;
         this.currentCharacterIndex = -1;
         this.tokens = [];
     }
@@ -125,8 +58,23 @@ var Tokenizer = (function () {
                 case 12 /* afterAttributeValueQuoted */:
                     this.afterAttributeValueQuotedState();
                     break;
-                default:
-                    this.done = true;
+                case 13 /* markupDeclarationOpen */:
+                    this.markupDeclarationOpenState();
+                    break;
+                case 14 /* commentStart */:
+                    this.commentStartState();
+                    break;
+                case 15 /* commentStartDash */:
+                    this.commentStartDashState();
+                    break;
+                case 16 /* comment */:
+                    this.commentState();
+                    break;
+                case 17 /* commentEndDash */:
+                    this.commentEndDashState();
+                    break;
+                case 18 /* commentEnd */:
+                    this.commentEndState();
                     break;
             }
             i += 1;
@@ -149,7 +97,10 @@ var Tokenizer = (function () {
     };
     Tokenizer.prototype.tagOpenState = function () {
         this.readNextCharacter();
-        if (this.currentCharacter === '/') {
+        if (this.currentCharacter === '!') {
+            this.state = 13 /* markupDeclarationOpen */;
+        }
+        else if (this.currentCharacter === '/') {
             this.state = 2 /* endTagOpen */;
         }
         else if (Tokenizer.UPPERCASE_A_Z.test(this.currentCharacter)) {
@@ -161,7 +112,7 @@ var Tokenizer = (function () {
             this.state = 3 /* tagName */;
         }
         else {
-            throw 'Parse error. Emit a U+003C LESS-THAN SIGN character token and reconsume the current input character in the data state.';
+            throw 'Character: ' + this.currentCharacter + '.Parse error. Emit a U+003C LESS-THAN SIGN character token and reconsume the current input character in the data state.';
         }
     };
     Tokenizer.prototype.endTagOpenState = function () {
@@ -400,6 +351,115 @@ var Tokenizer = (function () {
             throw 'Parse error. selfClosingTagState';
         }
     };
+    Tokenizer.prototype.markupDeclarationOpenState = function () {
+        if (this.charArrayEquals(this.characterLookahed(2), ['-', '-'])) {
+            this.readNextCharacter();
+            this.readNextCharacter();
+            this.state = 14 /* commentStart */;
+            this.currentToken = new CommentToken('');
+        }
+        else {
+            throw 'Parse error. markupDeclarationOpenState. Only comments implemented';
+        }
+    };
+    Tokenizer.prototype.commentStartState = function () {
+        var token = this.currentToken;
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = 15 /* commentStartDash */;
+        }
+        else if (this.currentCharacter === '>') {
+            throw 'Parse error. commentStartState';
+        }
+        else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentStartState';
+        }
+        else {
+            token.comment += this.currentCharacter;
+            this.state = 16 /* comment */;
+        }
+    };
+    Tokenizer.prototype.commentStartDashState = function () {
+        var token = this.currentToken;
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = 18 /* commentEnd */;
+        }
+        else if (this.currentCharacter === '>') {
+            throw 'Parse error. commentStartDashState';
+        }
+        else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentStartDashState';
+        }
+        else {
+            token.comment += '-' + this.currentCharacter;
+            this.state = 16 /* comment */;
+        }
+    };
+    Tokenizer.prototype.commentState = function () {
+        var token = this.currentToken;
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = 17 /* commentEndDash */;
+        }
+        else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentState';
+        }
+        else {
+            token.comment += this.currentCharacter;
+        }
+    };
+    Tokenizer.prototype.commentEndDashState = function () {
+        var token = this.currentToken;
+        this.readNextCharacter();
+        if (this.currentCharacter === '-') {
+            this.state = 18 /* commentEnd */;
+        }
+        else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentEndDashState';
+        }
+        else {
+            token.comment += '-' + this.currentCharacter;
+            this.state = 16 /* comment */;
+        }
+    };
+    Tokenizer.prototype.commentEndState = function () {
+        var token = this.currentToken;
+        this.readNextCharacter();
+        if (this.currentCharacter === '>') {
+            this.state = 0 /* dataState */;
+            this.emitToken(this.currentToken);
+        }
+        else if (this.currentCharacter === '!') {
+            throw 'Parse error. commentEndState';
+        }
+        else if (this.currentCharacter === '-') {
+            throw 'Parse error. commentEndState';
+        }
+        else if (this.currentCharacter === 'EOF') {
+            throw 'Parse error. EOF. commentEndState';
+        }
+        else {
+            throw 'Parse error. commentEndState';
+        }
+    };
+    Tokenizer.prototype.charArrayEquals = function (arr1, arr2) {
+        if (arr1.length !== arr2.length) {
+            return false;
+        }
+        var equals = true;
+        for (var i = 0; i < arr1.length; i += 1) {
+            equals = equals && arr1[i] === arr2[i];
+        }
+        return equals;
+    };
+    Tokenizer.prototype.characterLookahed = function (nbrChars) {
+        var chars = [];
+        for (var i = 1; i <= nbrChars; i += 1) {
+            chars.push(this.charArray[this.currentCharacterIndex + i]);
+        }
+        return chars;
+    };
     Tokenizer.prototype.readNextCharacter = function () {
         this.currentCharacterIndex += 1;
         if (this.currentCharacterIndex > this.charArray.length - 1) {
@@ -419,3 +479,93 @@ var Tokenizer = (function () {
     Tokenizer.WHITESPACE = /^\s$/;
     return Tokenizer;
 })();
+var Token = (function () {
+    function Token() {
+    }
+    return Token;
+})();
+/* EOF TOKEN */
+var EOFToken = (function (_super) {
+    __extends(EOFToken, _super);
+    function EOFToken() {
+        _super.apply(this, arguments);
+    }
+    return EOFToken;
+})(Token);
+/* DOCTYPE TOKEN */
+var DoctypeToken = (function (_super) {
+    __extends(DoctypeToken, _super);
+    function DoctypeToken() {
+        _super.apply(this, arguments);
+    }
+    return DoctypeToken;
+})(Token);
+/* COMMENT TOKEN */
+var CommentToken = (function (_super) {
+    __extends(CommentToken, _super);
+    function CommentToken(comment) {
+        _super.call(this);
+        this.comment = comment;
+    }
+    return CommentToken;
+})(Token);
+/* CHARACTER TOKEN */
+var CharacterToken = (function (_super) {
+    __extends(CharacterToken, _super);
+    function CharacterToken(character) {
+        _super.call(this);
+        this.character = character;
+    }
+    return CharacterToken;
+})(Token);
+var TagToken = (function (_super) {
+    __extends(TagToken, _super);
+    function TagToken(tagName) {
+        _super.call(this);
+        this.attributes = [];
+        this.selfClosing = false;
+        this.currentAttribute = null;
+        this.tagName = tagName;
+    }
+    TagToken.prototype.addAttribute = function (attribute) {
+        this.currentAttribute = attribute;
+        this.attributes.push(attribute);
+    };
+    return TagToken;
+})(Token);
+var StartTagToken = (function (_super) {
+    __extends(StartTagToken, _super);
+    function StartTagToken(tagName) {
+        _super.call(this, tagName);
+    }
+    return StartTagToken;
+})(TagToken);
+var EndTagToken = (function (_super) {
+    __extends(EndTagToken, _super);
+    function EndTagToken(tagName) {
+        _super.call(this, tagName);
+    }
+    return EndTagToken;
+})(TagToken);
+var TokenizerStates;
+(function (TokenizerStates) {
+    TokenizerStates[TokenizerStates["dataState"] = 0] = "dataState";
+    TokenizerStates[TokenizerStates["tagOpen"] = 1] = "tagOpen";
+    TokenizerStates[TokenizerStates["endTagOpen"] = 2] = "endTagOpen";
+    TokenizerStates[TokenizerStates["tagName"] = 3] = "tagName";
+    TokenizerStates[TokenizerStates["beforeAttributeName"] = 4] = "beforeAttributeName";
+    TokenizerStates[TokenizerStates["selfClosingTag"] = 5] = "selfClosingTag";
+    TokenizerStates[TokenizerStates["attributeName"] = 6] = "attributeName";
+    TokenizerStates[TokenizerStates["afterAttributeName"] = 7] = "afterAttributeName";
+    TokenizerStates[TokenizerStates["beforeAttributeValue"] = 8] = "beforeAttributeValue";
+    TokenizerStates[TokenizerStates["attributeValueDoubleQuoted"] = 9] = "attributeValueDoubleQuoted";
+    TokenizerStates[TokenizerStates["attributeValueSingleQuoted"] = 10] = "attributeValueSingleQuoted";
+    TokenizerStates[TokenizerStates["attributeValueUnquoted"] = 11] = "attributeValueUnquoted";
+    TokenizerStates[TokenizerStates["afterAttributeValueQuoted"] = 12] = "afterAttributeValueQuoted";
+    TokenizerStates[TokenizerStates["markupDeclarationOpen"] = 13] = "markupDeclarationOpen";
+    TokenizerStates[TokenizerStates["commentStart"] = 14] = "commentStart";
+    TokenizerStates[TokenizerStates["commentStartDash"] = 15] = "commentStartDash";
+    TokenizerStates[TokenizerStates["comment"] = 16] = "comment";
+    TokenizerStates[TokenizerStates["commentEndDash"] = 17] = "commentEndDash";
+    TokenizerStates[TokenizerStates["commentEnd"] = 18] = "commentEnd";
+})(TokenizerStates || (TokenizerStates = {}));
